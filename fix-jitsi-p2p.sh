@@ -71,6 +71,11 @@ docker compose restart web
 
 echo "[i] Контроль чтения config.js внутри web:"
 docker compose exec web bash -lc "grep -nE 'websocket:|bosh:|preferBosh|conference\\.|disableFocus|meshP2P' /usr/share/jitsi-meet/config.js | cat"
+echo "[i] Контроль /defaults/config.js и /etc/jitsi/meet/${DOMAIN}-config.js (на всякий случай):"
+docker compose exec web bash -lc "for p in /defaults/config.js /etc/jitsi/meet/${DOMAIN}-config.js; do echo ==== \$p ====; [ -f \$p ] && grep -nE 'websocket:|bosh:|preferBosh' \$p || echo 'нет файла'; done | cat"
+
+echo "[i] Контроль через reverse-proxy: какой config.js отдаёт web (обход https)"
+docker compose exec caddy sh -lc "curl -s http://web/config.js | grep -E 'websocket:|bosh:|preferBosh' -n | cat"
 
 echo "[i] Готово. Проверьте: https://${DOMAIN}"
 echo "[i] WebSocket: wss://${DOMAIN}/xmpp-websocket"

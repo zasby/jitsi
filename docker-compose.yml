@@ -19,7 +19,10 @@ services:
     expose:
       - "80"
     volumes:
+      # Подменяем конфиг во всех популярных местах, которые может читать образ
       - ./jitsi-meet/config.js:/usr/share/jitsi-meet/config.js:ro
+      - ./jitsi-meet/config.js:/defaults/config.js:ro
+      - ./jitsi-meet/config.js:/etc/jitsi/meet/${DOMAIN}-config.js:ro
       - ./overrides/lib-jitsi-meet.min.js:/usr/share/jitsi-meet/libs/lib-jitsi-meet.min.js:ro
     depends_on:
       - prosody

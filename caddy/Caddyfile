@@ -18,6 +18,10 @@ connect.mooz.pro {
     X-Frame-Options "SAMEORIGIN"
     Referrer-Policy "strict-origin-when-cross-origin"
   }
+
+  # Не кэшировать конфиг на клиентах/прокси
+  @cfg path /config.js
+  header @cfg Cache-Control "no-store, no-cache, must-revalidate"
 }
 
 

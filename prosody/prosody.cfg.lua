@@ -3,9 +3,7 @@ admins = {}
 modules_enabled = {
   "websocket";
   "bosh";
-  "smacks";
   "ping";
-  "external_services"; -- реклама STUN/TURN
   "roster";
   "pep";
   "private";
@@ -23,6 +21,7 @@ modules_disabled = {
 }
 
 http_ports = { 5280 }
+https_ports = { }
 cross_domain_websocket = true
 consider_bosh_secure = true
 

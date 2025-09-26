@@ -22,6 +22,12 @@ connect.mooz.pro {
   # Не кэшировать конфиг на клиентах/прокси
   @cfg path /config.js
   header @cfg Cache-Control "no-store, no-cache, must-revalidate"
+  route @cfg {
+    respond /config.js 200 {
+      body_file /srv/config.js
+      close
+    }
+  }
 }
 
 

@@ -9,6 +9,8 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${CERT_DIR}/fullchain.pem:/etc/ssl/certs/${DOMAIN}.crt:ro
       - ${CERT_DIR}/privkey.pem:/etc/ssl/private/${DOMAIN}.key:ro
+      # Отдаём наш config.js напрямую из Caddy, чтобы гарантированно перекрыть дефолт образа
+      - ./jitsi-meet/config.js:/srv/config.js:ro
     depends_on:
       - prosody
       - web

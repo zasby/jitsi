@@ -2,14 +2,15 @@ connect.mooz.pro {
   tls /etc/ssl/certs/connect.mooz.pro.crt /etc/ssl/private/connect.mooz.pro.key
   encode zstd gzip
 
-  @websocket path /xmpp-websocket
-  reverse_proxy @websocket prosody:5280
+  # XMPP → Prosody
+  @xmpp_ws path /xmpp-websocket
+  reverse_proxy @xmpp_ws prosody:5280
 
   @bosh path /http-bind
   reverse_proxy @bosh prosody:5280
 
-  root * /srv/web
-  file_server
+  # Всё остальное → официальный jitsi/web (nginx внутри)
+  reverse_proxy web:80
 
   header {
     Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"

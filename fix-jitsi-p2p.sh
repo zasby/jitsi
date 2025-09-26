@@ -27,82 +27,25 @@ EMAIL=${EMAIL}
 CERT_DIR=${CERT_DIR}
 EOF
 
-echo "[i] Готовлю web-дистрибутив..."
-if [ -d "${PROJECT_ROOT}/jitsi-meet" ]; then
-  pushd "${PROJECT_ROOT}/jitsi-meet" >/dev/null
-  if [ -f package-lock.json ]; then npm ci --no-audit --fund=false || true; else npm install --no-audit --fund=false || true; fi
-  BUILD_OK=0
-  # 1) Пробуем make (all: compile+deploy)
-  if command -v make >/dev/null && [ -f Makefile ]; then
-    echo "[i] Сборка через make..."
-    make && BUILD_OK=1 || echo "[w] make завершился с ошибкой"
-  fi
-  # 2) Пробуем npm скрипты
-  if [ "$BUILD_OK" -ne 1 ]; then
-    if grep -q "^build:" package.json 2>/dev/null; then
-      echo "[i] Сборка через npm run build...";
-      npm run build && BUILD_OK=1 || echo "[w] npm run build завершился с ошибкой";
-    elif grep -q "^compile:" package.json 2>/dev/null; then
-      echo "[i] Сборка через npm run compile...";
-      npm run compile && BUILD_OK=1 || echo "[w] npm run compile завершился с ошибкой";
-    fi
-  fi
-  # 3) Фоллбэк: сборка в контейнере node:22
-  if [ "$BUILD_OK" -ne 1 ]; then
-    echo "[i] Фоллбэк: сборка в контейнере node:22 (увеличенная память)...";
-    docker run --rm -v "$(pwd)":/src -w /src -e NODE_OPTIONS='--max-old-space-size=12288' node:22 bash -lc "\
-      npm ci --no-audit --fund=false && \
-      ( NODE_OPTIONS='--max-old-space-size=12288' make -j1 || \
-        ( npx webpack --mode=development --devtool=false --no-optimization-minimize --progress && make deploy-lib-jitsi-meet deploy-css ) || \
-        npm run build || npm run compile || true )"
-  fi
-  # Валидация: должен появиться каталог libs с бандлами
-  if [ ! -d libs ] || [ -z "$(ls -A libs 2>/dev/null || true)" ]; then
-    echo "[w] Сборка не создала каталог libs/. Перехожу на быстрый путь: предсобранный web + свой lib-jitsi-meet...";
-    popd >/dev/null
+echo "[i] Готовлю фронт: используем официальный jitsi/web и только оверрайды..."
+mkdir -p "${PROJECT_ROOT}/overrides"
 
-    # 3a) Скачиваем предсобранные веб-ассеты из официального пакета jitsi-meet-web
-    mkdir -p "${PROJECT_ROOT}/web-dist"
-    docker run --rm -v "${PROJECT_ROOT}/web-dist":/out ubuntu:22.04 bash -lc "\
-      set -e; apt-get update; apt-get install -y curl gnupg; \
-      echo 'deb https://download.jitsi.org stable/' > /etc/apt/sources.list.d/jitsi-stable.list; \
-      curl -fsSL https://download.jitsi.org/jitsi-key.gpg.key | gpg --dearmor > /etc/apt/trusted.gpg.d/jitsi.gpg; \
-      apt-get update; \
-      apt-get download jitsi-meet-web; \
-      dpkg-deb -x jitsi-meet-web_* /tmp/jmw; \
-      rsync -a /tmp/jmw/usr/share/jitsi-meet/ /out/"
-
-    # 3b) Собираем ТОЛЬКО lib-jitsi-meet из вашего форка и подменяем в web-dist
-    if [ -d "${PROJECT_ROOT}/lib-jitsi-meet" ]; then
-      pushd "${PROJECT_ROOT}/lib-jitsi-meet" >/dev/null
-      npm ci --no-audit --fund=false || true
-      npm run build || npm run compile || true
-      if ls dist/umd/lib-jitsi-meet*.js >/dev/null 2>&1; then
-        echo "[i] Копирую кастомный lib-jitsi-meet в web-dist/libs";
-        mkdir -p "${PROJECT_ROOT}/web-dist/libs"
-        cp -f dist/umd/lib-jitsi-meet*.js "${PROJECT_ROOT}/web-dist/libs/" || true
-      else
-        echo "[w] Не удалось собрать lib-jitsi-meet — оставляю стандартный";
-      fi
-      popd >/dev/null
-    fi
-
-    # 3c) Кладём наш config.js поверх стандартного
-    if [ -f "${PROJECT_ROOT}/jitsi-meet/config.js" ]; then
-      cp -f "${PROJECT_ROOT}/jitsi-meet/config.js" "${PROJECT_ROOT}/web-dist/config.js" || true
-    fi
-
-    echo "[i] Быстрый путь применён."
-  else
-    popd >/dev/null
+# Собираем ТОЛЬКО lib-jitsi-meet из форка (легко), если не соберётся — продолжим с дефолтным
+if [ -d "${PROJECT_ROOT}/lib-jitsi-meet" ]; then
+  pushd "${PROJECT_ROOT}/lib-jitsi-meet" >/dev/null
+  npm ci --no-audit --fund=false || true
+  npm run build || npm run compile || true
+  if ls dist/umd/lib-jitsi-meet*.min.js >/dev/null 2>&1; then
+    cp -f dist/umd/lib-jitsi-meet*.min.js "${PROJECT_ROOT}/overrides/lib-jitsi-meet.min.js" || true
+  elif ls dist/umd/lib-jitsi-meet*.js >/dev/null 2>&1; then
+    cp -f dist/umd/lib-jitsi-meet*.js "${PROJECT_ROOT}/overrides/lib-jitsi-meet.min.js" || true
   fi
-  # Если ранее сборка прошла, копируем(
-  if [ -d "${PROJECT_ROOT}/jitsi-meet/libs" ]; then
-    mkdir -p "${PROJECT_ROOT}/web-dist"
-    rsync -a --delete "${PROJECT_ROOT}/jitsi-meet/" "${PROJECT_ROOT}/web-dist/" --exclude node_modules --exclude .git
-  fi
-else
-  echo "[!] Не найден каталог jitsi-meet рядом с docker-compose.yml" >&2
+  popd >/dev/null
+fi
+
+# Убедимся, что наш config.js лежит; если нет — предупредим
+if [ ! -f "${PROJECT_ROOT}/jitsi-meet/config.js" ]; then
+  echo "[w] Не найден ${PROJECT_ROOT}/jitsi-meet/config.js — используем дефолт из контейнера web"
 fi
 
 echo "[i] Запускаю docker compose..."

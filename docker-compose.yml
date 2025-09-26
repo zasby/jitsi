@@ -7,9 +7,20 @@ services:
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./web-dist:/srv/web:ro
       - ${CERT_DIR}/fullchain.pem:/etc/ssl/certs/${DOMAIN}.crt:ro
       - ${CERT_DIR}/privkey.pem:/etc/ssl/private/${DOMAIN}.key:ro
+    depends_on:
+      - prosody
+      - web
+
+  web:
+    image: jitsi/web:stable
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      - ./jitsi-meet/config.js:/usr/share/jitsi-meet/config.js:ro
+      - ./overrides/lib-jitsi-meet.min.js:/usr/share/jitsi-meet/libs/lib-jitsi-meet.min.js:ro
     depends_on:
       - prosody
 

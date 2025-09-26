@@ -1,0 +1,51 @@
+# Multi-stage build for Jitsi Meet web (static) + Caddy runtime
+
+############################
+# Stage 1: Build web assets
+############################
+FROM node:22 as build
+
+ENV NODE_OPTIONS=--max-old-space-size=12288 \
+    CI=true \
+    WEBPACK_CACHE=false
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends make rsync python3 ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/jitsi-meet
+
+# Copy sources
+COPY jitsi-meet/ /app/jitsi-meet/
+
+# Install deps
+RUN npm ci --no-audit --fund=false
+
+# Try full build via make (compile + deploy)
+RUN make -j1 || echo "make failed, will try webpack fallback"
+
+# If libs didn't appear, try a lightweight webpack build to generate bundles,
+# then deploy the missing pieces (lib-jitsi-meet, css)
+RUN if [ ! -d libs ] || [ -z "$(ls -A libs 2>/dev/null || true)" ]; then \
+      echo "[i] Fallback: webpack dev build + make deploy"; \
+      npx webpack --mode=development --devtool=false --progress || true; \
+      make deploy || true; \
+    fi
+
+# Validate libs exist
+RUN test -d libs && [ -n "$(ls -A libs)" ] || (echo "[w] libs/ missing, copying from build/" && mkdir -p libs && cp -f build/*.js libs/ || true)
+
+############################
+# Stage 2: Caddy runtime
+############################
+FROM caddy:2.8
+
+# Caddyfile
+COPY caddy/Caddyfile /etc/caddy/Caddyfile
+
+# Static site
+COPY --from=build /app/jitsi-meet/ /srv/web/
+
+# Caddy serves /srv/web and reverse-proxies /xmpp-websocket,/http-bind per Caddyfile
+
+

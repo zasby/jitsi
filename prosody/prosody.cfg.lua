@@ -12,7 +12,6 @@ modules_enabled = {
   "blocklist";
   "vcard4";
   "vcard_legacy";
-  "muc";
   "limits";
   "csi_simple";
   "mam";

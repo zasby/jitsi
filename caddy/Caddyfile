@@ -1,5 +1,5 @@
-{$DOMAIN} {
-  tls /etc/ssl/certs/{$DOMAIN}.crt /etc/ssl/private/{$DOMAIN}.key
+connect.mooz.pro {
+  tls /etc/ssl/certs/connect.mooz.pro.crt /etc/ssl/private/connect.mooz.pro.key
   encode zstd gzip
 
   @websocket path /xmpp-websocket

@@ -1,0 +1,45 @@
+version: "3.8"
+
+services:
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web-dist:/srv/web:ro
+      - ${CERT_DIR}/fullchain.pem:/etc/ssl/certs/${DOMAIN}.crt:ro
+      - ${CERT_DIR}/privkey.pem:/etc/ssl/private/${DOMAIN}.key:ro
+    depends_on:
+      - prosody
+
+  prosody:
+    image: prosody/prosody:0.12
+    restart: unless-stopped
+    environment:
+      - LOCAL=connect
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./prosody/prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
+      - prosody-data:/var/lib/prosody
+    expose:
+      - "5280"
+
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    network_mode: "host"
+    environment:
+      - REALM=${DOMAIN}
+      - EXTERNAL_IP=${PUBLIC_IP}
+    volumes:
+      - ./turn/turnserver.conf:/etc/turnserver.conf:ro
+      - ${CERT_DIR}/fullchain.pem:/etc/turn/certs/fullchain.pem:ro
+      - ${CERT_DIR}/privkey.pem:/etc/turn/certs/privkey.pem:ro
+
+volumes:
+  prosody-data:
+
+

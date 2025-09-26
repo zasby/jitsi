@@ -16,7 +16,7 @@ services:
       - prosody
 
   prosody:
-    image: prosody/prosody:0.12
+    image: prosody/prosody:0.12.4
     restart: unless-stopped
     environment:
       - LOCAL=connect

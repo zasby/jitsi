@@ -30,8 +30,17 @@ EOF
 echo "[i] Готовлю web-дистрибутив..."
 if [ -d "${PROJECT_ROOT}/jitsi-meet" ]; then
   pushd "${PROJECT_ROOT}/jitsi-meet" >/dev/null
-  if [ -f package-lock.json ]; then npm ci; else npm install; fi
-  (npm run build || npm run compile || true)
+  if [ -f package-lock.json ]; then npm ci; else npm install || true; fi
+  # Jitsi Meet web: в некоторых ветках сборка через make
+  if grep -q "^build:" package.json 2>/dev/null; then
+    npm run build || true
+  elif grep -q "^compile:" package.json 2>/dev/null; then
+    npm run compile || true
+  elif command -v make >/dev/null && grep -q "^build:" Makefile 2>/dev/null; then
+    make build || true
+  else
+    echo "[w] Не нашел скриптов build/compile, копирую статические ресурсы как есть";
+  fi
   mkdir -p "${PROJECT_ROOT}/web-dist"
   if [ -d build ]; then
     rsync -a --delete build/ "${PROJECT_ROOT}/web-dist/"

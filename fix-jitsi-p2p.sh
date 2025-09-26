@@ -30,21 +30,35 @@ EOF
 echo "[i] Готовлю web-дистрибутив..."
 if [ -d "${PROJECT_ROOT}/jitsi-meet" ]; then
   pushd "${PROJECT_ROOT}/jitsi-meet" >/dev/null
-  if [ -f package-lock.json ]; then npm ci; else npm install || true; fi
-  # Предпочитаем Makefile (all: compile+deploy), если он есть
+  if [ -f package-lock.json ]; then npm ci --no-audit --fund=false || true; else npm install --no-audit --fund=false || true; fi
+  BUILD_OK=0
+  # 1) Пробуем make (all: compile+deploy)
   if command -v make >/dev/null && [ -f Makefile ]; then
-    make || true
-  else
+    echo "[i] Сборка через make..."
+    make && BUILD_OK=1 || echo "[w] make завершился с ошибкой"
+  fi
+  # 2) Пробуем npm скрипты
+  if [ "$BUILD_OK" -ne 1 ]; then
     if grep -q "^build:" package.json 2>/dev/null; then
-      npm run build || true
+      echo "[i] Сборка через npm run build...";
+      npm run build && BUILD_OK=1 || echo "[w] npm run build завершился с ошибкой";
     elif grep -q "^compile:" package.json 2>/dev/null; then
-      npm run compile || true
-    else
-      echo "[w] Не нашел make и скриптов build/compile, копирую статические ресурсы как есть";
+      echo "[i] Сборка через npm run compile...";
+      npm run compile && BUILD_OK=1 || echo "[w] npm run compile завершился с ошибкой";
     fi
   fi
+  # 3) Фоллбэк: сборка в контейнере node:18
+  if [ "$BUILD_OK" -ne 1 ]; then
+    echo "[i] Фоллбэк: сборка в контейнере node:18...";
+    docker run --rm -v "$(pwd)":/src -w /src node:18 bash -lc "npm ci --no-audit --fund=false && (make || npm run build || npm run compile || true)"
+  fi
+  # Валидация: должен появиться каталог libs с бандлами
+  if [ ! -d libs ] || [ -z "$(ls -A libs 2>/dev/null || true)" ]; then
+    echo "[!] Сборка не создала каталог libs/ — проверьте зависимости. Останавливаюсь." >&2
+    exit 1
+  fi
   mkdir -p "${PROJECT_ROOT}/web-dist"
-  # После make артефакты в корне (./libs, css, и т.д.) — копируем всё, кроме node_modules/.git
+  # После сборки копируем всё, кроме node_modules/.git
   rsync -a --delete . "${PROJECT_ROOT}/web-dist/" --exclude node_modules --exclude .git
   popd >/dev/null
 else
@@ -58,6 +72,13 @@ docker compose up -d
 echo "[i] Готово. Проверьте: https://${DOMAIN}"
 echo "[i] WebSocket: wss://${DOMAIN}/xmpp-websocket"
 echo "[i] TURN UDP 3478: ${PUBLIC_IP}, user=turnuser, pass=turnpass"
+
+# Быстрый автотест HTTP/WS/BOSH
+echo "[i] Быстрая проверка HTTP/WS/BOSH..."
+curl -s -I "https://${DOMAIN}" | head -10 || true
+curl -s -o /dev/null -w "BOSH %{{http_code}}\n" -H 'Content-Type: text/xml' \
+  -d '<body rid="1" xmlns="http://jabber.org/protocol/httpbind" to="connect.mooz.pro" wait="60" hold="1" ver="1.6" xml:lang="en" xmpp:version="1.0" xmlns:xmpp="urn:xmpp:xbosh"/>' \
+  "https://${DOMAIN}/http-bind" || true
 
 #!/bin/bash
 

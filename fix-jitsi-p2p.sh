@@ -58,13 +58,49 @@ if [ -d "${PROJECT_ROOT}/jitsi-meet" ]; then
   fi
   # Валидация: должен появиться каталог libs с бандлами
   if [ ! -d libs ] || [ -z "$(ls -A libs 2>/dev/null || true)" ]; then
-    echo "[!] Сборка не создала каталог libs/ — проверьте зависимости. Останавливаюсь." >&2
-    exit 1
+    echo "[w] Сборка не создала каталог libs/. Перехожу на быстрый путь: предсобранный web + свой lib-jitsi-meet...";
+    popd >/dev/null
+
+    # 3a) Скачиваем предсобранные веб-ассеты из официального пакета jitsi-meet-web
+    mkdir -p "${PROJECT_ROOT}/web-dist"
+    docker run --rm -v "${PROJECT_ROOT}/web-dist":/out ubuntu:22.04 bash -lc "\
+      set -e; apt-get update; apt-get install -y curl gnupg; \
+      echo 'deb https://download.jitsi.org stable/' > /etc/apt/sources.list.d/jitsi-stable.list; \
+      curl -fsSL https://download.jitsi.org/jitsi-key.gpg.key | gpg --dearmor > /etc/apt/trusted.gpg.d/jitsi.gpg; \
+      apt-get update; \
+      apt-get download jitsi-meet-web; \
+      dpkg-deb -x jitsi-meet-web_* /tmp/jmw; \
+      rsync -a /tmp/jmw/usr/share/jitsi-meet/ /out/"
+
+    # 3b) Собираем ТОЛЬКО lib-jitsi-meet из вашего форка и подменяем в web-dist
+    if [ -d "${PROJECT_ROOT}/lib-jitsi-meet" ]; then
+      pushd "${PROJECT_ROOT}/lib-jitsi-meet" >/dev/null
+      npm ci --no-audit --fund=false || true
+      npm run build || npm run compile || true
+      if ls dist/umd/lib-jitsi-meet*.js >/dev/null 2>&1; then
+        echo "[i] Копирую кастомный lib-jitsi-meet в web-dist/libs";
+        mkdir -p "${PROJECT_ROOT}/web-dist/libs"
+        cp -f dist/umd/lib-jitsi-meet*.js "${PROJECT_ROOT}/web-dist/libs/" || true
+      else
+        echo "[w] Не удалось собрать lib-jitsi-meet — оставляю стандартный";
+      fi
+      popd >/dev/null
+    fi
+
+    # 3c) Кладём наш config.js поверх стандартного
+    if [ -f "${PROJECT_ROOT}/jitsi-meet/config.js" ]; then
+      cp -f "${PROJECT_ROOT}/jitsi-meet/config.js" "${PROJECT_ROOT}/web-dist/config.js" || true
+    fi
+
+    echo "[i] Быстрый путь применён."
+  else
+    popd >/dev/null
   fi
-  mkdir -p "${PROJECT_ROOT}/web-dist"
-  # После сборки копируем всё, кроме node_modules/.git
-  rsync -a --delete . "${PROJECT_ROOT}/web-dist/" --exclude node_modules --exclude .git
-  popd >/dev/null
+  # Если ранее сборка прошла, копируем(
+  if [ -d "${PROJECT_ROOT}/jitsi-meet/libs" ]; then
+    mkdir -p "${PROJECT_ROOT}/web-dist"
+    rsync -a --delete "${PROJECT_ROOT}/jitsi-meet/" "${PROJECT_ROOT}/web-dist/" --exclude node_modules --exclude .git
+  fi
 else
   echo "[!] Не найден каталог jitsi-meet рядом с docker-compose.yml" >&2
 fi

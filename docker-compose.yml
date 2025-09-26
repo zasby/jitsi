@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   caddy:
     image: caddy:2.8
@@ -16,11 +14,10 @@ services:
       - prosody
 
   prosody:
-    image: prosody/prosody:0.12.4
+    build:
+      context: .
+      dockerfile: Dockerfile.prosody
     restart: unless-stopped
-    environment:
-      - LOCAL=connect
-      - DOMAIN=${DOMAIN}
     volumes:
       - ./prosody/prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
       - prosody-data:/var/lib/prosody

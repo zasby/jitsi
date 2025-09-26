@@ -1,0 +1,25 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    prosody \
+    lua-sec lua-zlib lua-expat lua-filesystem lua-bitop \
+    lua-event lua-json lua-ldap lua-logging lua-lpeg lua-socket \
+    ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# Конфиг
+COPY prosody/prosody.cfg.lua /etc/prosody/prosody.cfg.lua
+
+# Данные и логи
+RUN mkdir -p /var/lib/prosody /var/log/prosody \
+ && chown -R prosody:prosody /var/lib/prosody /var/log/prosody
+
+EXPOSE 5280
+
+USER prosody
+CMD ["prosody"]
+
+

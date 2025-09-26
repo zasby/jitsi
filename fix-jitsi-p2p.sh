@@ -49,8 +49,8 @@ if [ -d "${PROJECT_ROOT}/jitsi-meet" ]; then
   fi
   # 3) Фоллбэк: сборка в контейнере node:18
   if [ "$BUILD_OK" -ne 1 ]; then
-    echo "[i] Фоллбэк: сборка в контейнере node:18...";
-    docker run --rm -v "$(pwd)":/src -w /src node:18 bash -lc "npm ci --no-audit --fund=false && (make || npm run build || npm run compile || true)"
+    echo "[i] Фоллбэк: сборка в контейнере node:18 (увеличенная память)...";
+    docker run --rm -v "$(pwd)":/src -w /src -e NODE_OPTIONS='--max-old-space-size=12288' node:18 bash -lc "npm ci --no-audit --fund=false && (make || npx webpack --mode=production --progress || npm run build || npm run compile || true)"
   fi
   # Валидация: должен появиться каталог libs с бандлами
   if [ ! -d libs ] || [ -z "$(ls -A libs 2>/dev/null || true)" ]; then

@@ -52,6 +52,39 @@ echo "[i] Запускаю docker compose..."
 cd "${PROJECT_ROOT}"
 docker compose up -d
 
+# Форсированно устанавливаем корректный config.js внутри контейнера web
+echo "[i] Подменяю config.js внутри web контейнера..."
+docker compose exec web bash -lc "cat > /usr/share/jitsi-meet/config.js <<'JS'
+var config = {
+  hosts: {
+    domain: '${DOMAIN}',
+    muc: 'conference.${DOMAIN}'
+  },
+
+  // Явные адреса Prosody через Caddy
+  bosh: 'https://${DOMAIN}/http-bind',
+  websocket: 'wss://${DOMAIN}/xmpp-websocket',
+
+  // На время отладки можно форсировать BOSH (снимите, когда WS стабилен)
+  preferBosh: true,
+
+  // P2P mesh
+  meshP2P: { enabled: true, maxPeers: 5 },
+  disableFocus: true,
+
+  p2p: {
+    enabled: true,
+    stunServers: [ { urls: 'stun:turn.${DOMAIN}:3478' } ]
+  }
+};
+JS"
+
+echo "[i] Перезапускаю web для применения config.js..."
+docker compose restart web
+
+echo "[i] Контроль чтения config.js внутри web:"
+docker compose exec web bash -lc "grep -nE 'websocket:|bosh:|preferBosh|conference\.|disableFocus|meshP2P' /usr/share/jitsi-meet/config.js | cat"
+
 echo "[i] Готово. Проверьте: https://${DOMAIN}"
 echo "[i] WebSocket: wss://${DOMAIN}/xmpp-websocket"
 echo "[i] TURN UDP 3478: ${PUBLIC_IP}, user=turnuser, pass=turnpass"

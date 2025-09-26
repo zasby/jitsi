@@ -31,24 +31,21 @@ echo "[i] Готовлю web-дистрибутив..."
 if [ -d "${PROJECT_ROOT}/jitsi-meet" ]; then
   pushd "${PROJECT_ROOT}/jitsi-meet" >/dev/null
   if [ -f package-lock.json ]; then npm ci; else npm install || true; fi
-  # Jitsi Meet web: в некоторых ветках сборка через make
-  if grep -q "^build:" package.json 2>/dev/null; then
-    npm run build || true
-  elif grep -q "^compile:" package.json 2>/dev/null; then
-    npm run compile || true
-  elif command -v make >/dev/null && grep -q "^build:" Makefile 2>/dev/null; then
-    make build || true
+  # Предпочитаем Makefile (all: compile+deploy), если он есть
+  if command -v make >/dev/null && [ -f Makefile ]; then
+    make || true
   else
-    echo "[w] Не нашел скриптов build/compile, копирую статические ресурсы как есть";
+    if grep -q "^build:" package.json 2>/dev/null; then
+      npm run build || true
+    elif grep -q "^compile:" package.json 2>/dev/null; then
+      npm run compile || true
+    else
+      echo "[w] Не нашел make и скриптов build/compile, копирую статические ресурсы как есть";
+    fi
   fi
   mkdir -p "${PROJECT_ROOT}/web-dist"
-  if [ -d build ]; then
-    rsync -a --delete build/ "${PROJECT_ROOT}/web-dist/"
-  elif [ -d dist ]; then
-    rsync -a --delete dist/ "${PROJECT_ROOT}/web-dist/"
-  else
-    rsync -a --delete . "${PROJECT_ROOT}/web-dist/" --exclude node_modules --exclude .git
-  fi
+  # После make артефакты в корне (./libs, css, и т.д.) — копируем всё, кроме node_modules/.git
+  rsync -a --delete . "${PROJECT_ROOT}/web-dist/" --exclude node_modules --exclude .git
   popd >/dev/null
 else
   echo "[!] Не найден каталог jitsi-meet рядом с docker-compose.yml" >&2

@@ -30,14 +30,7 @@ VirtualHost "connect.mooz.pro"
   allow_unencrypted_plain_auth = true
   ssl = { }
   modules_enabled = {
-    "websocket"; "bosh"; "ping"; "smacks"; "mam";
-  }
-  external_services = {
-    { type = "stun", host = "turn.connect.mooz.pro", port = 3478 };
-    { type = "turn", host = "turn.connect.mooz.pro", port = 3478, transport = "udp",
-      username = "turnuser", password = "turnpass" };
-    -- { type = "turns", host = "connect.mooz.pro", port = 5349, transport = "tcp",
-    --   username = "turnuser", password = "turnpass" };
+    "websocket"; "bosh"; "ping"; "mam";
   }
 
 VirtualHost "auth.connect.mooz.pro"

@@ -47,10 +47,14 @@ if [ -d "${PROJECT_ROOT}/jitsi-meet" ]; then
       npm run compile && BUILD_OK=1 || echo "[w] npm run compile завершился с ошибкой";
     fi
   fi
-  # 3) Фоллбэк: сборка в контейнере node:18
+  # 3) Фоллбэк: сборка в контейнере node:22
   if [ "$BUILD_OK" -ne 1 ]; then
-    echo "[i] Фоллбэк: сборка в контейнере node:18 (увеличенная память)...";
-    docker run --rm -v "$(pwd)":/src -w /src -e NODE_OPTIONS='--max-old-space-size=12288' node:18 bash -lc "npm ci --no-audit --fund=false && (make || npx webpack --mode=production --progress || npm run build || npm run compile || true)"
+    echo "[i] Фоллбэк: сборка в контейнере node:22 (увеличенная память)...";
+    docker run --rm -v "$(pwd)":/src -w /src -e NODE_OPTIONS='--max-old-space-size=12288' node:22 bash -lc "\
+      npm ci --no-audit --fund=false && \
+      ( NODE_OPTIONS='--max-old-space-size=12288' make -j1 || \
+        ( npx webpack --mode=development --devtool=false --no-optimization-minimize --progress && make deploy-lib-jitsi-meet deploy-css ) || \
+        npm run build || npm run compile || true )"
   fi
   # Валидация: должен появиться каталог libs с бандлами
   if [ ! -d libs ] || [ -z "$(ls -A libs 2>/dev/null || true)" ]; then

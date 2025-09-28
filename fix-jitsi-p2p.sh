@@ -82,23 +82,38 @@ ${DOMAIN} {
   tls /etc/ssl/certs/${DOMAIN}.crt /etc/ssl/private/${DOMAIN}.key
   encode zstd gzip
 
+  # XMPP WebSocket → Prosody:5280 (HTTP, проксируем upgrade корректно)
   @xmpp_ws path /xmpp-websocket
-  reverse_proxy @xmpp_ws prosody:5280
+  reverse_proxy @xmpp_ws prosody:5280 {
+    header_up Host {host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For {remote}
+  }
 
+  # BOSH → Prosody:5280
   @bosh path /http-bind
-  reverse_proxy @bosh prosody:5280
+  reverse_proxy @bosh prosody:5280 {
+    header_up Host {host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For {remote}
+  }
 
-  # Не кэшировать и отдавать строго наш /srv/config.js
+  # Отдаём /config.js строго из /srv и запрещаем кэш
   @cfg path /config.js
   header @cfg Cache-Control "no-store, no-cache, must-revalidate"
   handle @cfg {
-    root * /srv
-    try_files {path}
-    file_server
+    respond /config.js 200 {
+      body_file /srv/config.js
+      close
+    }
   }
 
-  # Всё остальное проксируем на web:80
-  reverse_proxy web:80
+  # Всё остальное → web:80
+  reverse_proxy web:80 {
+    header_up Host {host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-For {remote}
+  }
 
   header {
     Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
@@ -128,6 +143,43 @@ curl -s -I "https://${DOMAIN}" | head -10 || true
 curl -s -o /dev/null -w "BOSH %{{http_code}}\n" -H 'Content-Type: text/xml' \
   -d '<body rid="1" xmlns="http://jabber.org/protocol/httpbind" to="connect.mooz.pro" wait="60" hold="1" ver="1.6" xml:lang="en" xmpp:version="1.0" xmlns:xmpp="urn:xmpp:xbosh"/>' \
   "https://${DOMAIN}/http-bind" || true
+
+# Новая функция: глубокая диагностика и жёсткая валидация того, что клиент НЕ получает localhost в config.js
+doctor() {
+    echo "🔎 DOCTOR: Проверяю, что фронт и XMPP настроены правильно (без localhost)"
+    echo ""
+
+    echo "1) Что реально отдает Caddy по /config.js (ключевые поля):"
+    docker compose exec caddy sh -lc 'apk add --no-cache curl >/dev/null 2>&1 || true; curl -s https://'"${DOMAIN}"'/config.js | sed -n "1,220p" | grep -nE "hosts:|bosh:|websocket:|preferBosh|meshP2P|disableFocus|p2p:|stunServers" | cat'
+    echo ""
+
+    echo "2) Проверка на утечки localhost/127.0.0.1 в отданном config.js:"
+    if docker compose exec caddy sh -lc 'curl -s https://'"${DOMAIN}"'/config.js | grep -E "localhost|127\.0\.0\.1|:8443" -n | cat' | grep -qE "localhost|127\\.0\\.0\\.1|:8443"; then
+        echo "❌ ВНИМАНИЕ: В отданном /config.js обнаружены localhost/127.0.0.1/8443 — браузер будет бить в локалхост."
+        echo "   Скрипт ниже принудительно перезапишет /srv/config.js и перегрузит Caddy."
+        echo ""
+    else
+        echo "✅ localhost/127.0.0.1 в отданном /config.js не обнаружены"
+    fi
+    echo ""
+
+    echo "3) Проверяю доступность прокси к Prosody: /http-bind и /xmpp-websocket"
+    docker compose exec caddy sh -lc 'curl -sI https://'"${DOMAIN}"'/http-bind | head -n 1 | cat'
+    docker compose exec caddy sh -lc 'curl -sI https://'"${DOMAIN}"'/xmpp-websocket | head -n 1 | cat'
+    echo ""
+
+    echo "4) Прозвон из Caddy внутрь Prosody:"
+    docker compose exec caddy sh -lc 'curl -sI http://prosody:5280/http-bind | head -n 3 | cat'
+    docker compose exec caddy sh -lc 'curl -sI http://prosody:5280/xmpp-websocket | head -n 3 | cat'
+    echo ""
+
+    echo "5) Быстрая проверка, что в lib-jitsi-meet фиксирован абсолютный WS:"
+    if docker compose exec caddy sh -lc 'curl -s https://'"${DOMAIN}"'/config.js' | grep -q "wss://${DOMAIN}/xmpp-websocket"; then
+        echo "✅ Абсолютный WS в config.js найден: wss://${DOMAIN}/xmpp-websocket"
+    else
+        echo "⚠️  Абсолютный WS не найден — будет применён автопочин в команде websocket"
+    fi
+}
 
 #!/bin/bash
 
@@ -2137,17 +2189,37 @@ fix_websocket_connection() {
     
     # Проверяем доступность WebSocket через curl
     echo "🌐 Проверка доступности WebSocket:"
-    if curl -s -I https://connect.mooz.pro/xmpp-websocket | head -1; then
+    if curl -s -I https://${DOMAIN}/xmpp-websocket | head -1; then
         echo "✅ WebSocket endpoint доступен"
     else
         echo "❌ WebSocket endpoint недоступен"
     fi
     echo ""
     
-    # Перезапускаем Nginx для применения изменений
-    echo "🔄 Перезапуск Nginx..."
-    docker compose restart web
-    sleep 5
+    # Форсируем корректный /srv/config.js с абсолютными URL + preferBosh fallback
+    echo "🛠️  Переписываю /srv/config.js (абсолютные URL, запрет кэша)…"
+    cat > "${PROJECT_ROOT}/jitsi-meet/config.js" <<CFG
+var config = {
+  hosts: { domain: '${DOMAIN}', muc: 'conference.${DOMAIN}' },
+  bosh: 'https://${DOMAIN}/http-bind',
+  websocket: 'wss://${DOMAIN}/xmpp-websocket',
+  preferBosh: true,
+  // включаем экспериментальный meshP2P (без JVB)
+  meshP2P: { enabled: true, maxPeers: 5 },
+  // отключаем focus/Jicofo на клиенте
+  disableFocus: true,
+  // P2P настройки
+  p2p: { enabled: true, stunServers: [ { urls: 'stun:turn.${DOMAIN}:3478' } ] }
+};
+CFG
+
+    # Перезапускаем Caddy, чтобы он отдал свежий /srv/config.js
+    echo "🔄 Перезапуск Caddy…"
+    docker compose restart caddy
+    sleep 3
+
+    echo "🧪 Повторная проверка ключевых полей /config.js через Caddy:"
+    docker compose exec caddy sh -lc 'apk add --no-cache curl >/dev/null 2>&1 || true; curl -s https://'"${DOMAIN}"'/config.js | grep -nE "websocket:|bosh:|preferBosh|meshP2P|disableFocus" | cat'
     
     echo "✅ Проверка WebSocket соединения завершена"
     echo ""
@@ -2455,6 +2527,9 @@ main() {
         "diagnose")
             diagnose
             ;;
+        "doctor")
+            doctor
+            ;;
         "fix")
             fix_jvb_password
             fix_config_files
@@ -2493,6 +2568,7 @@ main() {
             echo ""
             echo "Команды:"
             echo "  diagnose   - диагностика проблем"
+            echo "  doctor     - быстрая проверка выдачи /config.js и прокси WS/BOSH"
             echo "  fix        - исправление проблем"
             echo "  status     - проверка статуса"
             echo "  ssl        - исправление только SSL и прав доступа"

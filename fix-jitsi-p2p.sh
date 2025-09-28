@@ -74,6 +74,47 @@ docker compose exec web bash -lc "grep -nE 'websocket:|bosh:|preferBosh|conferen
 echo "[i] Контроль /defaults/config.js и /etc/jitsi/meet/${DOMAIN}-config.js (на всякий случай):"
 docker compose exec web bash -lc "for p in /defaults/config.js /etc/jitsi/meet/${DOMAIN}-config.js; do echo ==== \$p ====; [ -f \$p ] && grep -nE 'websocket:|bosh:|preferBosh' \$p || echo 'нет файла'; done | cat"
 
+# --- Caddyfile фикс для корректной раздачи /config.js без кэша ---
+echo "[i] Обновляю caddy/Caddyfile для раздачи /config.js из /srv с Cache-Control: no-store..."
+mkdir -p "${PROJECT_ROOT}/caddy"
+cat > "${PROJECT_ROOT}/caddy/Caddyfile" <<EOF
+${DOMAIN} {
+  tls /etc/ssl/certs/${DOMAIN}.crt /etc/ssl/private/${DOMAIN}.key
+  encode zstd gzip
+
+  @xmpp_ws path /xmpp-websocket
+  reverse_proxy @xmpp_ws prosody:5280
+
+  @bosh path /http-bind
+  reverse_proxy @bosh prosody:5280
+
+  # Не кэшировать и отдавать строго наш /srv/config.js
+  @cfg path /config.js
+  header @cfg Cache-Control "no-store, no-cache, must-revalidate"
+  handle @cfg {
+    root * /srv
+    try_files {path}
+    file_server
+  }
+
+  # Всё остальное проксируем на web:80
+  reverse_proxy web:80
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}
+EOF
+
+echo "[i] Перезапускаю Caddy..."
+docker compose restart caddy
+
+echo "[i] Контроль через Caddy (HTTPS): что реально отдаётся по /config.js"
+docker compose exec caddy sh -lc 'apk add --no-cache curl >/dev/null 2>&1 || true; curl -s https://'"${DOMAIN}"'/config.js | grep -nE "websocket:|bosh:|preferBosh" | cat'
+
 echo "[i] Контроль через reverse-proxy: какой config.js отдаёт web (обход https)"
 docker compose exec caddy sh -lc "curl -s http://web/config.js | grep -E 'websocket:|bosh:|preferBosh' -n | cat"
 

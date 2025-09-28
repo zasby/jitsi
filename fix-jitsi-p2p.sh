@@ -128,10 +128,10 @@ echo "[i] Перезапускаю Caddy..."
 docker compose restart caddy
 
 echo "[i] Контроль через Caddy (HTTPS): что реально отдаётся по /config.js"
-docker compose exec caddy sh -lc 'apk add --no-cache curl >/dev/null 2>&1 || true; curl -s https://'"${DOMAIN}"'/config.js | grep -nE "websocket:|bosh:|preferBosh" | cat'
+curl -s https://"${DOMAIN}"/config.js | grep -nE "websocket:|bosh:|preferBosh" | cat || true
 
 echo "[i] Контроль через reverse-proxy: какой config.js отдаёт web (обход https)"
-docker compose exec caddy sh -lc "curl -s http://web/config.js | grep -E 'websocket:|bosh:|preferBosh' -n | cat"
+curl -s https://"${DOMAIN}"/config.js | grep -nE "websocket:|bosh:|preferBosh" | cat || true
 
 echo "[i] Готово. Проверьте: https://${DOMAIN}"
 echo "[i] WebSocket: wss://${DOMAIN}/xmpp-websocket"

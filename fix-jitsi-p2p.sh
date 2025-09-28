@@ -82,26 +82,28 @@ ${DOMAIN} {
   tls /etc/ssl/certs/${DOMAIN}.crt /etc/ssl/private/${DOMAIN}.key
   encode zstd gzip
 
-  # XMPP WebSocket → Prosody:5280 (HTTP, проксируем upgrade корректно)
-  @xmpp_ws path /xmpp-websocket
-  reverse_proxy @xmpp_ws prosody:5280 {
-    header_up Host {host}
-    header_up X-Forwarded-Proto {scheme}
-    header_up X-Forwarded-For {remote}
+  # XMPP WebSocket/BOSH → Prosody:5280 (совпадение по префиксу)
+  handle_path /xmpp-websocket* {
+    reverse_proxy prosody:5280 {
+      header_up Host {host}
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-For {remote}
+    }
   }
 
-  # BOSH → Prosody:5280
-  @bosh path /http-bind
-  reverse_proxy @bosh prosody:5280 {
-    header_up Host {host}
-    header_up X-Forwarded-Proto {scheme}
-    header_up X-Forwarded-For {remote}
+  handle_path /http-bind* {
+    reverse_proxy prosody:5280 {
+      header_up Host {host}
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-For {remote}
+    }
   }
 
   # Отдаём /config.js строго из /srv и запрещаем кэш
-  @cfg path /config.js
-  header @cfg Cache-Control "no-store, no-cache, must-revalidate"
-  handle @cfg {
+  handle_path /config.js {
+    header {
+      Cache-Control "no-store, no-cache, must-revalidate"
+    }
     root * /srv
     file_server
   }

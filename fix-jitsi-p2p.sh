@@ -102,10 +102,8 @@ ${DOMAIN} {
   @cfg path /config.js
   header @cfg Cache-Control "no-store, no-cache, must-revalidate"
   handle @cfg {
-    respond /config.js 200 {
-      body_file /srv/config.js
-      close
-    }
+    root * /srv
+    file_server
   }
 
   # Всё остальное → web:80
@@ -140,7 +138,7 @@ echo "[i] TURN UDP 3478: ${PUBLIC_IP}, user=turnuser, pass=turnpass"
 # Быстрый автотест HTTP/WS/BOSH
 echo "[i] Быстрая проверка HTTP/WS/BOSH..."
 curl -s -I "https://${DOMAIN}" | head -10 || true
-curl -s -o /dev/null -w "BOSH %{{http_code}}\n" -H 'Content-Type: text/xml' \
+curl -s -o /dev/null -w "BOSH %{http_code}\n" -H 'Content-Type: text/xml' \
   -d '<body rid="1" xmlns="http://jabber.org/protocol/httpbind" to="connect.mooz.pro" wait="60" hold="1" ver="1.6" xml:lang="en" xmpp:version="1.0" xmlns:xmpp="urn:xmpp:xbosh"/>' \
   "https://${DOMAIN}/http-bind" || true
 

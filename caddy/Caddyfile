@@ -19,14 +19,12 @@ connect.mooz.pro {
     Referrer-Policy "strict-origin-when-cross-origin"
   }
 
-  # Не кэшировать конфиг на клиентах/прокси
+  # Не кэшировать конфиг на клиентах/прокси; отдаем файл из /srv
   @cfg path /config.js
   header @cfg Cache-Control "no-store, no-cache, must-revalidate"
-  route @cfg {
-    respond /config.js 200 {
-      body_file /srv/config.js
-      close
-    }
+  handle @cfg {
+    root * /srv
+    file_server
   }
 }
 

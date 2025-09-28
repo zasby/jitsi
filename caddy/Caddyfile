@@ -2,20 +2,17 @@ connect.mooz.pro {
   tls /etc/ssl/certs/connect.mooz.pro.crt /etc/ssl/private/connect.mooz.pro.key
   encode zstd gzip
 
-  # XMPP → Prosody (по префиксу, чтобы не было 404 от web)
-  handle_path /xmpp-websocket* {
-    reverse_proxy prosody:5280
-  }
+  # XMPP → Prosody (не отрезаем префикс!)
+  @xmpp_ws path /xmpp-websocket /xmpp-websocket/*
+  reverse_proxy @xmpp_ws prosody:5280
 
-  handle_path /http-bind* {
-    reverse_proxy prosody:5280
-  }
+  @bosh path /http-bind /http-bind/*
+  reverse_proxy @bosh prosody:5280
 
   # Не кэшировать конфиг на клиентах/прокси; отдаем файл из /srv
-  handle_path /config.js {
-    header {
-      Cache-Control "no-store, no-cache, must-revalidate"
-    }
+  @cfg path /config.js
+  header @cfg Cache-Control "no-store, no-cache, must-revalidate"
+  handle @cfg {
     root * /srv
     file_server
   }

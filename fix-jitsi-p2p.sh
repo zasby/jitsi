@@ -253,9 +253,9 @@ CONF
     docker compose restart prosody
     sleep 3
 
-    echo "🧪 Проверка путей прямо на prosody:5280"
-    docker compose exec -T caddy curl -sI http://prosody:5280/http-bind | head -3
-    docker compose exec -T caddy curl -sI http://prosody:5280/xmpp-websocket | head -3
+    echo "🧪 Проверка путей прямо на prosody:5280 (с правильным Host)"
+    docker compose exec -T caddy curl -sI -H 'Host: ${DOMAIN}' http://prosody:5280/http-bind | head -3
+    docker compose exec -T caddy curl -sI -H 'Host: ${DOMAIN}' http://prosody:5280/xmpp-websocket | head -3
 }
 
 #!/bin/bash

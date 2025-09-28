@@ -4,10 +4,14 @@ connect.mooz.pro {
 
   # XMPP → Prosody (не отрезаем префикс!)
   @xmpp_ws path /xmpp-websocket /xmpp-websocket/*
-  reverse_proxy @xmpp_ws prosody:5280
+  reverse_proxy @xmpp_ws prosody:5280 {
+    header_up Host {host}
+  }
 
   @bosh path /http-bind /http-bind/*
-  reverse_proxy @bosh prosody:5280
+  reverse_proxy @bosh prosody:5280 {
+    header_up Host {host}
+  }
 
   # Не кэшировать конфиг на клиентах/прокси; отдаем файл из /srv
   @cfg path /config.js

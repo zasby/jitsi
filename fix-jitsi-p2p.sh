@@ -181,6 +181,83 @@ doctor() {
     fi
 }
 
+# Принудительно включаем HTTP-модули Prosody и явные пути /http-bind и /xmpp-websocket
+ensure_prosody_http_paths() {
+    echo "🔧 Настраиваю Prosody HTTP endpoints (/http-bind, /xmpp-websocket)"
+    local CFG="${PROJECT_ROOT}/prosody/prosody.cfg.lua"
+
+    if [ ! -f "$CFG" ]; then
+        echo "⚠️  $CFG не найден, создаю минимальный конфиг с HTTP"
+        mkdir -p "${PROJECT_ROOT}/prosody"
+        cat > "$CFG" <<'CONF'
+admins = {}
+
+modules_enabled = {
+  "http";
+  "websocket";
+  "bosh";
+  "ping";
+}
+
+modules_disabled = { "posix" }
+
+http_ports = { 5280 }
+https_ports = { }
+http_interfaces = { "*" }
+http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket"; }
+
+cross_domain_websocket = true
+consider_bosh_secure = true
+
+VirtualHost "connect.mooz.pro"
+  authentication = "anonymous"
+  modules_enabled = { "websocket"; "bosh"; "ping" }
+
+VirtualHost "auth.connect.mooz.pro"
+  authentication = "internal_hashed"
+
+Component "conference.connect.mooz.pro" "muc"
+  restrict_room_creation = false
+CONF
+    else
+        # Правки in-place
+        sed -i 's/^\s*https_ports\s*=.*/https_ports = { }/g' "$CFG" || true
+        # modules_enabled: гарантируем наличие http/websocket/bosh
+        if ! grep -q '"http"' "$CFG"; then
+            sed -i '0,/modules_enabled/s//modules_enabled = {\n  "http";\n/1' "$CFG" || true
+        fi
+        # http_ports и interfaces
+        if grep -q '^\s*http_ports' "$CFG"; then
+            sed -i 's/^\s*http_ports\s*=.*/http_ports = { 5280 }/' "$CFG"
+        else
+            sed -i '1i http_ports = { 5280 }' "$CFG"
+        fi
+        if grep -q '^\s*http_interfaces' "$CFG"; then
+            sed -i 's/^\s*http_interfaces\s*=.*/http_interfaces = { "*" }/' "$CFG"
+        else
+            sed -i '1i http_interfaces = { "*" }' "$CFG"
+        fi
+        # http_paths
+        if grep -q '^\s*http_paths' "$CFG"; then
+            sed -i 's#^\s*http_paths\s*=.*#http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket"; }#' "$CFG"
+        else
+            sed -i '1i http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket"; }' "$CFG"
+        fi
+        # Убедимся, что главный VirtualHost включает websocket/bosh
+        if ! awk 'f&&/}/{f=0} f; /VirtualHost "connect.mooz.pro"/{f=1}' "$CFG" | grep -q 'websocket'; then
+            awk '1; /VirtualHost "connect.mooz.pro"/ && c==0 {print "  modules_enabled = { \"websocket\"; \"bosh\"; \"ping\"; }"; c=1}' "$CFG" >"$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+        fi
+    fi
+
+    echo "🔄 Перезапуск Prosody…"
+    docker compose restart prosody
+    sleep 3
+
+    echo "🧪 Проверка путей прямо на prosody:5280"
+    docker compose exec -T caddy curl -sI http://prosody:5280/http-bind | head -3
+    docker compose exec -T caddy curl -sI http://prosody:5280/xmpp-websocket | head -3
+}
+
 #!/bin/bash
 
 # ЕДИНЫЙ СКРИПТ ДЛЯ ИСПРАВЛЕНИЯ P2P JITSI MEET
@@ -2213,6 +2290,9 @@ var config = {
 };
 CFG
 
+    # Гарантируем, что Prosody поднимает нужные HTTP пути
+    ensure_prosody_http_paths
+
     # Перезапускаем Caddy, чтобы он отдал свежий /srv/config.js
     echo "🔄 Перезапуск Caddy…"
     docker compose restart caddy
@@ -2220,6 +2300,10 @@ CFG
 
     echo "🧪 Повторная проверка ключевых полей /config.js через Caddy:"
     docker compose exec caddy sh -lc 'apk add --no-cache curl >/dev/null 2>&1 || true; curl -s https://'"${DOMAIN}"'/config.js | grep -nE "websocket:|bosh:|preferBosh|meshP2P|disableFocus" | cat'
+
+    echo "🧪 Проверка через домен WS/BOSH (ожидаемо: 200/400/405/101):"
+    curl -sI https://${DOMAIN}/http-bind | head -1
+    curl -sI https://${DOMAIN}/xmpp-websocket | head -1
     
     echo "✅ Проверка WebSocket соединения завершена"
     echo ""

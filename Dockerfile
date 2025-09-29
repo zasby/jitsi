@@ -40,3 +40,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Запуск приложения
 CMD ["npm", "start"]
+

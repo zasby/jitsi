@@ -207,7 +207,7 @@ modules_disabled = { "posix" }
 http_ports = { 5280 }
 https_ports = { }
 http_interfaces = { "*" }
-http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket"; }
+http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket" }
 
 cross_domain_websocket = true
 consider_bosh_secure = true
@@ -242,9 +242,9 @@ CONF
         fi
         # http_paths
         if grep -q '^\s*http_paths' "$CFG"; then
-            sed -i 's#^\s*http_paths\s*=.*#http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket"; }#' "$CFG"
+            sed -i 's#^\s*http_paths\s*=.*#http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket" }#' "$CFG"
         else
-            sed -i '1i http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket"; }' "$CFG"
+            sed -i '1i http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket" }' "$CFG"
         fi
         # Убедимся, что главный VirtualHost включает websocket/bosh
         if ! awk 'f&&/}/{f=0} f; /VirtualHost "connect.mooz.pro"/{f=1}' "$CFG" | grep -q 'websocket'; then

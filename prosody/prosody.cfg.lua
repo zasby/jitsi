@@ -22,6 +22,14 @@ modules_disabled = {
 
 http_ports = { 5280 }
 https_ports = { }
+http_interfaces = { "*" }
+
+-- Явное сопоставление путей модулей
+http_paths = {
+  bosh = "/http-bind";
+  websocket = "/xmpp-websocket";
+}
+
 cross_domain_websocket = true
 consider_bosh_secure = true
 

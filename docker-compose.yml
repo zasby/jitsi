@@ -20,6 +20,17 @@ services:
     restart: unless-stopped
     expose:
       - "80"
+    environment:
+      - PUBLIC_URL=https://${DOMAIN}
+      - XMPP_DOMAIN=${DOMAIN}
+      - XMPP_AUTH_DOMAIN=auth.${DOMAIN}
+      - XMPP_MUC_DOMAIN=conference.${DOMAIN}
+      - XMPP_BOSH_URL_BASE=https://${DOMAIN}/http-bind
+      - XMPP_WEBSOCKET_URL=wss://${DOMAIN}/xmpp-websocket
+      - ENABLE_XMPP_WEBSOCKET=1
+      - ENABLE_P2P=1
+      - ENABLE_AUTH=0
+      - ENABLE_GUESTS=1
     volumes:
       # Подменяем конфиг во всех популярных местах, которые может читать образ
       - ./jitsi-meet/config.js:/usr/share/jitsi-meet/config.js:ro

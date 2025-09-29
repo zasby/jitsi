@@ -74,6 +74,12 @@ docker compose exec web bash -lc "grep -nE 'websocket:|bosh:|preferBosh|conferen
 echo "[i] Контроль /defaults/config.js и /etc/jitsi/meet/${DOMAIN}-config.js (на всякий случай):"
 docker compose exec web bash -lc "for p in /defaults/config.js /etc/jitsi/meet/${DOMAIN}-config.js; do echo ==== \$p ====; [ -f \$p ] && grep -nE 'websocket:|bosh:|preferBosh' \$p || echo 'нет файла'; done | cat"
 
+echo "[i] Проверяю переменные окружения web контейнера:"
+docker compose exec web bash -lc "env | grep -E 'PUBLIC_URL|XMPP|ENABLE' | sort"
+
+echo "[i] Проверяю что отдает web контейнер по localhost/config.js:"
+docker compose exec web bash -lc "curl -s http://localhost/config.js | grep -E 'websocket|bosh' | head -3"
+
 # --- Caddyfile фикс для корректной раздачи /config.js без кэша ---
 echo "[i] Обновляю caddy/Caddyfile для раздачи /config.js из /srv с Cache-Control: no-store..."
 mkdir -p "${PROJECT_ROOT}/caddy"
@@ -254,8 +260,8 @@ CONF
     sleep 3
 
     echo "🧪 Проверка путей прямо на prosody:5280 (с правильным Host)"
-    docker compose exec -T caddy curl -sI -H 'Host: ${DOMAIN}' http://prosody:5280/http-bind | head -3
-    docker compose exec -T caddy curl -sI -H 'Host: ${DOMAIN}' http://prosody:5280/xmpp-websocket | head -3
+    docker compose exec -T caddy sh -lc "curl -sI -H 'Host: ${DOMAIN}' http://prosody:5280/http-bind | head -3"
+    docker compose exec -T caddy sh -lc "curl -sI -H 'Host: ${DOMAIN}' http://prosody:5280/xmpp-websocket | head -3"
 }
 
 #!/bin/bash

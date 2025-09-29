@@ -244,7 +244,7 @@ CONF
         if grep -q '^\s*http_paths' "$CFG"; then
             sed -i 's#^\s*http_paths\s*=.*#http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket" }#' "$CFG"
         else
-            sed -i '1i http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket" }' "$CFG"
+            sed -i '/http_interfaces/a http_paths = { bosh = "/http-bind"; websocket = "/xmpp-websocket" }' "$CFG"
         fi
         # Убедимся, что главный VirtualHost включает websocket/bosh
         if ! awk 'f&&/}/{f=0} f; /VirtualHost "connect.mooz.pro"/{f=1}' "$CFG" | grep -q 'websocket'; then

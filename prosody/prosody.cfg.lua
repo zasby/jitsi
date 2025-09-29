@@ -33,6 +33,10 @@ http_paths = {
 cross_domain_websocket = true
 consider_bosh_secure = true
 
+-- Отключаем требование TLS глобально
+c2s_require_encryption = false
+s2s_require_encryption = false
+
 VirtualHost "connect.mooz.pro"
   authentication = "anonymous"
   allow_unencrypted_plain_auth = true
@@ -40,6 +44,9 @@ VirtualHost "connect.mooz.pro"
   modules_enabled = {
     "websocket"; "bosh"; "ping"; "mam";
   }
+  -- Отключаем требование TLS для внутренних соединений
+  c2s_require_encryption = false
+  s2s_require_encryption = false
 
 VirtualHost "auth.connect.mooz.pro"
   authentication = "internal_hashed"

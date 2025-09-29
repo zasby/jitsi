@@ -255,6 +255,22 @@ CONF
     echo "🔄 Перезапуск Prosody…"
     docker compose restart prosody
     sleep 3
+    
+    # Проверяем синтаксис конфигурации Prosody
+    echo "🔍 Проверяю синтаксис конфигурации Prosody..."
+    if docker compose exec prosody bash -lc "prosodyctl check --config /etc/prosody/prosody.cfg.lua" 2>&1 | grep -q "Error:"; then
+        echo "❌ Синтаксическая ошибка в конфигурации Prosody"
+        echo "📋 Содержимое строк 25-35:"
+        docker compose exec prosody bash -lc "cat /etc/prosody/prosody.cfg.lua | sed -n '25,35p'"
+        echo "🔧 Исправляю конфигурацию..."
+        # Удаляем проблемные строки и пересоздаем конфиг
+        docker compose exec prosody bash -lc "sed -i '/http_paths/d' /etc/prosody/prosody.cfg.lua"
+        docker compose exec prosody bash -lc "sed -i '/http_interfaces/a http_paths = { bosh = \"/http-bind\"; websocket = \"/xmpp-websocket\" }' /etc/prosody/prosody.cfg.lua"
+        docker compose restart prosody
+        sleep 3
+    else
+        echo "✅ Синтаксис конфигурации Prosody корректен"
+    fi
 
     echo "🧪 Проверка путей прямо на prosody:5280 (с правильным Host)"
     docker compose exec -T caddy sh -lc "curl -sI -H 'Host: ${DOMAIN}' http://prosody:5280/http-bind | head -3"

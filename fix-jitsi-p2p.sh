@@ -248,7 +248,7 @@ CONF
         fi
         # Убедимся, что главный VirtualHost включает websocket/bosh
         if ! awk 'f&&/}/{f=0} f; /VirtualHost "connect.mooz.pro"/{f=1}' "$CFG" | grep -q 'websocket'; then
-            awk '1; /VirtualHost "connect.mooz.pro"/ && c==0 {print "  modules_enabled = { \"websocket\"; \"bosh\"; \"ping\"; }"; c=1}' "$CFG" >"$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+            awk '1; /VirtualHost "connect.mooz.pro"/ && c==0 {print "  modules_enabled = { \"websocket\"; \"bosh\"; \"ping\"; \"mam\" }"; c=1}' "$CFG" >"$CFG.tmp" && mv "$CFG.tmp" "$CFG"
         fi
     fi
 

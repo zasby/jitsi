@@ -88,20 +88,17 @@ ${DOMAIN} {
   tls /etc/ssl/certs/${DOMAIN}.crt /etc/ssl/private/${DOMAIN}.key
   encode zstd gzip
 
-  # XMPP WebSocket/BOSH → Prosody:5280 (совпадение по префиксу)
+  # XMPP WebSocket → Prosody:5280 (HTTP, проксируем upgrade корректно)
   handle_path /xmpp-websocket* {
-    reverse_proxy prosody:5280 {
+    reverse_proxy http://prosody:5280 {
       header_up Host {host}
-      header_up X-Forwarded-Proto {scheme}
-      header_up X-Forwarded-For {remote}
     }
   }
 
+  # BOSH → Prosody:5280
   handle_path /http-bind* {
-    reverse_proxy prosody:5280 {
+    reverse_proxy http://prosody:5280 {
       header_up Host {host}
-      header_up X-Forwarded-Proto {scheme}
-      header_up X-Forwarded-For {remote}
     }
   }
 

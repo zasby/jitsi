@@ -263,9 +263,8 @@ CONF
         echo "📋 Содержимое строк 25-35:"
         docker compose exec prosody bash -lc "cat /etc/prosody/prosody.cfg.lua | sed -n '25,35p'"
         echo "🔧 Исправляю конфигурацию..."
-        # Удаляем проблемные строки и пересоздаем конфиг
-        docker compose exec prosody bash -lc "sed -i '/http_paths/d' /etc/prosody/prosody.cfg.lua"
-        docker compose exec prosody bash -lc "sed -i '/http_interfaces/a http_paths = { bosh = \"/http-bind\"; websocket = \"/xmpp-websocket\" }' /etc/prosody/prosody.cfg.lua"
+        # Исправляем лишнюю запятую в modules_enabled
+        docker compose exec prosody bash -lc "sed -i 's/\"mam\";/\"mam\"/' /etc/prosody/prosody.cfg.lua"
         docker compose restart prosody
         sleep 3
     else

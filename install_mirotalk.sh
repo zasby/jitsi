@@ -223,6 +223,73 @@ ENABLE_RECORDING=false
 RECORDING_PATH=/app/recordings
 EOF
 
+    # Копирование docker-compose.yml
+    if [[ -f "docker-compose.yml" ]]; then
+        cp docker-compose.yml /opt/mirotalk/
+    else
+        log_info "Создаем docker-compose.yml..."
+        cat > /opt/mirotalk/docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  # Основной сервис MiroTalk
+  mirotalk:
+    image: node:18-alpine
+    container_name: mirotalk
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./mirotalk:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DOMAIN=connect.mooz.pro
+      - PORT=3000
+    command: sh -c "npm install && npm start"
+    networks:
+      - mirotalk-network
+
+  # Nginx для проксирования и SSL
+  nginx:
+    image: nginx:alpine
+    container_name: mirotalk-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - mirotalk
+    networks:
+      - mirotalk-network
+
+  # Certbot для SSL сертификатов
+  certbot:
+    image: certbot/certbot
+    container_name: mirotalk-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    command: certonly --webroot --webroot-path=/var/www/certbot --email admin@mooz.pro --agree-tos --no-eff-email -d connect.mooz.pro
+    networks:
+      - mirotalk-network
+
+networks:
+  mirotalk-network:
+    driver: bridge
+
+volumes:
+  mirotalk-data:
+EOF
+    fi
+
     # Копирование nginx конфигурации
     if [[ -f "nginx/nginx.conf" ]]; then
         cp nginx/nginx.conf /opt/mirotalk/nginx/
@@ -377,6 +444,17 @@ server {
 EOF
     fi
     
+    # Копирование скриптов управления
+    if [[ -f "manage_mirotalk.sh" ]]; then
+        cp manage_mirotalk.sh /opt/mirotalk/
+        chmod +x /opt/mirotalk/manage_mirotalk.sh
+    fi
+    
+    if [[ -f "setup_turn_server.sh" ]]; then
+        cp setup_turn_server.sh /opt/mirotalk/
+        chmod +x /opt/mirotalk/setup_turn_server.sh
+    fi
+    
     log_success "Конфигурационные файлы настроены"
 }
 
@@ -411,27 +489,55 @@ setup_firewall() {
 setup_ssl() {
     log_info "Настройка SSL сертификата..."
     
+    # Создание временной конфигурации nginx без SSL
+    cat > /opt/mirotalk/nginx/conf.d/mirotalk-temp.conf << 'EOF'
+# Временная HTTP конфигурация для получения SSL сертификата
+server {
+    listen 80;
+    server_name connect.mooz.pro;
+
+    # Let's Encrypt challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Временный прокси на MiroTalk
+    location / {
+        proxy_pass http://mirotalk:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+
     # Временный запуск nginx для получения сертификата
     docker compose up -d nginx
     
     # Ожидание запуска nginx
-    sleep 10
+    log_info "Ожидание запуска nginx..."
+    sleep 15
+    
+    # Проверка доступности nginx
+    if ! curl -s http://localhost/.well-known/acme-challenge/test > /dev/null 2>&1; then
+        log_warning "Nginx не отвечает, продолжаем без SSL"
+        return 0
+    fi
     
     # Получение сертификата через certbot
-    docker compose run --rm certbot certonly \
+    log_info "Получение SSL сертификата..."
+    if docker compose run --rm certbot certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
         --email admin@mooz.pro \
         --agree-tos \
         --no-eff-email \
-        -d connect.mooz.pro
-    
-    if [[ $? -eq 0 ]]; then
+        -d connect.mooz.pro 2>/dev/null; then
         log_success "SSL сертификат получен успешно"
     else
-        log_error "Не удалось получить SSL сертификат"
-        log_warning "Убедитесь, что домен connect.mooz.pro указывает на IP этого сервера"
-        log_warning "Попробуйте получить сертификат вручную позже"
+        log_warning "Не удалось получить SSL сертификат автоматически"
+        log_info "SSL будет настроен позже вручную"
     fi
 }
 
@@ -444,13 +550,30 @@ start_services() {
     # Остановка существующих контейнеров
     docker compose down 2>/dev/null || true
     
-    # Запуск всех сервисов
+    # Сначала запускаем только MiroTalk
+    log_info "Запуск MiroTalk..."
+    docker compose up -d mirotalk
+    
+    # Ожидание запуска MiroTalk
+    log_info "Ожидание запуска MiroTalk..."
+    sleep 30
+    
+    # Проверка доступности MiroTalk
+    if docker compose exec mirotalk curl -s http://localhost:3000 > /dev/null 2>&1; then
+        log_success "MiroTalk запущен успешно"
+    else
+        log_warning "MiroTalk может быть еще не готов, продолжаем..."
+    fi
+    
+    # Запуск всех остальных сервисов
+    log_info "Запуск всех сервисов..."
     docker compose up -d
     
-    # Ожидание запуска
-    sleep 15
+    # Ожидание полного запуска
+    sleep 20
     
     # Проверка статуса
+    log_info "Статус сервисов:"
     docker compose ps
     
     log_success "Сервисы запущены"

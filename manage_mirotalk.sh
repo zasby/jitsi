@@ -110,7 +110,7 @@ update_mirotalk() {
     # Обновление кода
     if [[ -d "mirotalk" ]]; then
         cd mirotalk
-        git pull origin main
+        git pull origin master
         cd ..
     else
         log_error "Директория mirotalk не найдена"

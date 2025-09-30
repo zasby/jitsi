@@ -163,10 +163,11 @@ clone_mirotalk() {
     if [[ -d "mirotalk" ]]; then
         log_warning "Директория mirotalk уже существует. Обновляем..."
         cd mirotalk
-        git pull origin main
+        git pull origin master
     else
         git clone https://github.com/miroslavpejic85/mirotalk.git
         cd mirotalk
+        git checkout master
     fi
     
     log_success "MiroTalk клонирован/обновлен"

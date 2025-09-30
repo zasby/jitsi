@@ -224,8 +224,158 @@ RECORDING_PATH=/app/recordings
 EOF
 
     # Копирование nginx конфигурации
-    cp nginx/nginx.conf /opt/mirotalk/nginx/
-    cp nginx/conf.d/mirotalk.conf /opt/mirotalk/nginx/conf.d/
+    if [[ -f "nginx/nginx.conf" ]]; then
+        cp nginx/nginx.conf /opt/mirotalk/nginx/
+        cp nginx/conf.d/mirotalk.conf /opt/mirotalk/nginx/conf.d/
+    else
+        log_warning "Nginx конфигурация не найдена в текущей директории"
+        log_info "Создаем базовую конфигурацию nginx..."
+        mkdir -p /opt/mirotalk/nginx/conf.d
+        
+        # Создание nginx.conf
+        cat > /opt/mirotalk/nginx/nginx.conf << 'EOF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log notice;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Логирование
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    # Основные настройки
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 100M;
+
+    # Gzip сжатие
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/atom+xml
+        image/svg+xml;
+
+    # Безопасность
+    server_tokens off;
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+
+    # Подключение конфигураций сайтов
+    include /etc/nginx/conf.d/*.conf;
+}
+EOF
+
+        # Создание конфигурации для MiroTalk
+        cat > /opt/mirotalk/nginx/conf.d/mirotalk.conf << 'EOF'
+# HTTP сервер для редиректа на HTTPS и Let's Encrypt
+server {
+    listen 80;
+    server_name connect.mooz.pro;
+
+    # Let's Encrypt challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Редирект всего остального на HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# HTTPS сервер
+server {
+    listen 443 ssl http2;
+    server_name connect.mooz.pro;
+
+    # SSL сертификаты
+    ssl_certificate /etc/letsencrypt/live/connect.mooz.pro/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/connect.mooz.pro/privkey.pem;
+
+    # SSL настройки
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA:ECDHE-RSA-DES-CBC3-SHA:EDH-RSA-DES-CBC3-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # HSTS
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # WebSocket поддержка
+    location / {
+        proxy_pass http://mirotalk:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+
+    # Статические файлы
+    location /static/ {
+        proxy_pass http://mirotalk:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Кэширование статических файлов
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # API endpoints
+    location /api/ {
+        proxy_pass http://mirotalk:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # CORS headers
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range";
+    }
+
+    # Логирование
+    access_log /var/log/nginx/mirotalk.access.log;
+    error_log /var/log/nginx/mirotalk.error.log;
+}
+EOF
+    fi
     
     log_success "Конфигурационные файлы настроены"
 }
